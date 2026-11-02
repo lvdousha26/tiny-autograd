@@ -1,0 +1,15 @@
+# build output
+build/
+out/
+output/
+*.exe
+*.o
+*.obj
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# local scratch: pre-fix source backup kept outside version control
+_baseline/
