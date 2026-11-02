@@ -14,6 +14,9 @@ class Net
 	enum LossFun{MEAN_SQUARED, CROSS_ENTROPY}; // 损失函数类型
 	Net();
 
+	Net(const Net&) = delete;
+	Net& operator=(const Net&) = delete;
+
 	// 添加网络层
 	void add_layer(int num_of_inputs, int num_of_outputs, FCLayer::ActivationFun fn);
 

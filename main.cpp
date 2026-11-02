@@ -50,7 +50,7 @@ MNIST_DATA_set read_MNIST_DATA()
 	{
 		training_labels[i][dataset.training_labels[i]] = 1;
 	}
-	std::vector<std::vector<float>> test_labels(train_num, std::vector<float>(10, 0));
+	std::vector<std::vector<float>> test_labels(test_num, std::vector<float>(10, 0));
 	for (int i = 0; i < test_num; ++i)
 	{
 		test_labels[i][dataset.test_labels[i]] = 1;

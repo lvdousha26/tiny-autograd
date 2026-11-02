@@ -27,6 +27,9 @@ class Tensor
 	// 构造函数
 	explicit Tensor(int row_dim, int col_dim, bool require_grad = false);
 
+	Tensor(const Tensor&) = delete;
+	Tensor& operator=(const Tensor&) = delete;
+
 	// 反向传播：计算左子节点的梯度
 	void backward_calculate_left_grad();
 

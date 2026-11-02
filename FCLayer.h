@@ -15,6 +15,9 @@ class FCLayer
 	// 构造函数：创建层并构建计算图
 	FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn);
 
+	FCLayer(const FCLayer&) = delete;
+	FCLayer& operator=(const FCLayer&) = delete;
+
 	~FCLayer();
 
 	void zero_grad() const;

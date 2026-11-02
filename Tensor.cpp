@@ -83,7 +83,7 @@ void Tensor::backward_calculate_left_grad()
 	case CalculateFun::VECTOR_SQUARED:
 		for (int j = 0; j < this->left->col_dimension; ++j)
 		{
-			this->left->grad[0][j] = this->left->data[0][j] - this->right->data[0][j];
+			this->left->grad[0][j] += this->grad[0][0] * (this->left->data[0][j] - this->right->data[0][j]);
 		}
 		break;
 	case LEAF:

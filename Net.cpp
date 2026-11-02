@@ -143,6 +143,8 @@ void Net::add_layer(int num_of_inputs, int num_of_outputs, FCLayer::ActivationFu
 
 void Net::set_loss_function(LossFun fn)
 {
+	delete loss;
+	delete y_label;
 	loss = new Tensor(1, 1, true);
 	Tensor* last_layer_outputs = (*layers.rbegin())->GetOutputs();
 	y_label = new Tensor(1, last_layer_outputs->get_col_dimension());
