@@ -100,6 +100,7 @@ int main(int argc, char** argv)
 	float lr = 0.001f;
 	bool buggy = false;
 	bool use_memo = false;
+	bool backward_given = false;
 	bool lr_given = false;
 	for (int i = 1; i < argc; ++i)
 	{
@@ -107,7 +108,11 @@ int main(int argc, char** argv)
 		else if (std::strcmp(argv[i], "--train") == 0) train_n = std::atoi(argv[++i]);
 		else if (std::strcmp(argv[i], "--test") == 0) test_n = std::atoi(argv[++i]);
 		else if (std::strcmp(argv[i], "--epochs") == 0) epochs = std::atoi(argv[++i]);
-		else if (std::strcmp(argv[i], "--backward") == 0) use_memo = (std::strcmp(argv[++i], "memo") == 0);
+		else if (std::strcmp(argv[i], "--backward") == 0)
+		{
+			use_memo = (std::strcmp(argv[++i], "memo") == 0);
+			backward_given = true;
+		}
 		else if (std::strcmp(argv[i], "--hidden") == 0) hidden = std::atoi(argv[++i]);
 		else if (std::strcmp(argv[i], "--gbatch") == 0) gbatch = std::atoi(argv[++i]);
 		else if (std::strcmp(argv[i], "--lr") == 0)
@@ -126,7 +131,7 @@ int main(int argc, char** argv)
 	std::cerr << "[setup] train=" << train_n << " test=" << test_n
 			  << " epochs=" << epochs << " batch=" << batch << " lr=" << lr
 			  << " buggy_loop=" << (buggy ? 1 : 0)
-			  << " backward=" << (use_memo ? "memo" : "stack")
+			  << " backward=" << (backward_given ? (use_memo ? "memo" : "stack") : "auto")
 			  << " hidden=" << hidden
 			  << " gbatch=" << gbatch << std::endl;
 
@@ -144,7 +149,12 @@ int main(int argc, char** argv)
 	}
 	nn.set_loss_function(Net::LossFun::CROSS_ENTROPY);
 	nn.init_parameters(0.0f, 0.02f);
-	nn.set_backward_mode(use_memo ? Net::BackwardMode::MEMO_SEARCH : Net::BackwardMode::STACK_DFS);
+	if (backward_given)
+	{
+		nn.set_backward_mode(use_memo ? Net::BackwardMode::MEMO_SEARCH : Net::BackwardMode::STACK_DFS);
+	}
+	std::cerr << "[setup] effective backward="
+			  << (nn.get_backward_mode() == Net::BackwardMode::MEMO_SEARCH ? "memo" : "stack") << std::endl;
 
 	std::vector<int> index_vec(train_n);
 	std::iota(index_vec.begin(), index_vec.end(), 0);

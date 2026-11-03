@@ -47,6 +47,7 @@ class Net
 
 	// 切换反向传播实现
 	void set_backward_mode(BackwardMode mode);
+	[[nodiscard]] BackwardMode get_backward_mode() const;
 
 	void zero_grad() const;
 
@@ -66,8 +67,14 @@ class Net
 	Tensor* loss{};
 	int batch_rows = 1;								// 损失张量
 	void zero_grad_without_parameters() const;
-	BackwardMode backward_mode = STACK_DFS;
+	// 默认走记忆化搜索：支持 DAG、且会剪掉无消费者的分支（实测更快）
+	BackwardMode backward_mode = MEMO_SEARCH;
 };
+
+inline Net::BackwardMode Net::get_backward_mode() const
+{
+	return backward_mode;
+}
 
 inline float Net::get_loss_value() const
 {

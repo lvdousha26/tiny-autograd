@@ -145,7 +145,7 @@ class Net:
         _lib.ta_init_params(self._h, mean, std)
         return self
 
-    def set_backward(self, mode: str = "stack") -> "Net":
+    def set_backward(self, mode: str = "memo") -> "Net":
         if mode not in _BACKWARD:
             raise ValueError(f"mode 只支持 {list(_BACKWARD)}")
         self._check(_lib.ta_set_backward(self._h, _BACKWARD[mode]))
