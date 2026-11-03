@@ -2,10 +2,8 @@
 
 //
 
-#include <stack>
-#include <functional>
-#include <unordered_set>
 #include <iostream>
+#include "Graph.h"
 #include "Net.h"
 
 Net::Net() = default;
@@ -82,82 +80,24 @@ float Net::forward(const std::vector<float>& input_value, const std::vector<floa
 
 void Net::backward() const
 {
-	if (!loss->is_require_grad() || loss->get_calculate_fn() == Tensor::LEAF)
-	{
-		return;
-	}
-
-	std::stack<Tensor*> tensor_stack;
-	loss->one_grad(); // 设置损失函数的梯度为1
-	tensor_stack.push(loss);
-	while (true)
-	{
-		if (tensor_stack.empty())
-		{
-			break;
-		}
-		Tensor* cur_tensor = tensor_stack.top();
-		tensor_stack.pop();
-		Tensor* left = cur_tensor->get_left();
-		Tensor* right = cur_tensor->get_right();
-		// 向左子节点传播梯度
-		if (left != nullptr && left->is_require_grad())
-		{
-			cur_tensor->backward_calculate_left_grad();
-			tensor_stack.push(left);
-		}
-		// 向右子节点传播梯度
-		if (right != nullptr && right->is_require_grad())
-		{
-			cur_tensor->backward_calculate_right_grad();
-			tensor_stack.push(right);
-		}
-	}
+	graph::backward_tree(loss);
 }
-
 
 void Net::set_backward_mode(BackwardMode mode)
 {
 	backward_mode = mode;
 }
 
-// 记忆化搜索：每个节点的梯度只求解一次，由消费者向上汇总
 void Net::backward_memo() const
 {
-	if (!loss->is_require_grad() || loss->get_calculate_fn() == Tensor::LEAF)
-	{
-		return;
-	}
-
-	loss->one_grad();
-
-	std::unordered_set<Tensor*> solved;
-	std::function<void(Tensor*)> grad_of = [&](Tensor* z)
-	{
-		if (!z->is_require_grad() || !solved.insert(z).second)
-		{
-			return;
-		}
-		for (const auto& edge : z->get_consumers())
-		{
-			Tensor* consumer = edge.node;
-			grad_of(consumer); // 先保证消费者的梯度已经完整
-			if (edge.slot == 0)
-			{
-				consumer->backward_calculate_left_grad();
-			}
-			else
-			{
-				consumer->backward_calculate_right_grad();
-			}
-		}
-	};
-
+	std::vector<Tensor*> params;
+	params.reserve(layers.size() * 2);
 	for (const auto& it : layers)
 	{
-		grad_of(it->GetWeights());
-		grad_of(it->GetBias());
+		params.push_back(it->GetWeights());
+		params.push_back(it->GetBias());
 	}
+	graph::backward_memo(loss, params);
 }
 
 void Net::zero_grad() const
