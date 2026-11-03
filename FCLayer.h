@@ -13,7 +13,8 @@ class FCLayer
 	enum ActivationFun{NONE, RELU}; // 激活函数
 
 	// 构造函数：创建层并构建计算图
-	FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn);
+	// batch 为该层一次处理的样本数（行数），默认 1 表示逐样本
+	FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn, int batch = 1);
 
 	FCLayer(const FCLayer&) = delete;
 	FCLayer& operator=(const FCLayer&) = delete;

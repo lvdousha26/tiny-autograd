@@ -5,23 +5,23 @@
 #include "utils.h"
 #include "Net.h"
 
-FCLayer::FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn ) : activation_fn(fn)
+FCLayer::FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn, int batch) : activation_fn(fn)
 {
 	// 创建各种Tensor
-	inputs = new Tensor(1, num_of_inputs, true);
-	outputs = new Tensor(1, num_of_outputs, true);
+	inputs = new Tensor(batch, num_of_inputs, true);
+	outputs = new Tensor(batch, num_of_outputs, true);
 	weights = new Tensor(num_of_outputs, num_of_inputs, true);
 	bias = new Tensor(1, num_of_outputs, true);
 
 	// 构建计算图：Wx
-	auto* w_x = new Tensor(1, num_of_outputs, true);
+	auto* w_x = new Tensor(batch, num_of_outputs, true);
 	w_x->set_left(weights);
 	w_x->set_right(inputs);
 	w_x->set_calculate_fn(Tensor::CalculateFun::MATRIX_MUL_VECTOR);
 	intermediate_results.emplace_back(w_x);
 
 	// 构建计算图：Wx + b
-	auto* w_x_b = new Tensor(1, num_of_outputs, true);
+	auto* w_x_b = new Tensor(batch, num_of_outputs, true);
 	w_x_b->set_left(w_x);
 	w_x_b->set_right(bias);
 	w_x_b->set_calculate_fn(Tensor::CalculateFun::VECTOR_ADD_VECTOR);

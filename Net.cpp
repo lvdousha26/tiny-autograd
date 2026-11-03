@@ -6,7 +6,7 @@
 #include "Graph.h"
 #include "Net.h"
 
-Net::Net() = default;
+Net::Net(int batch) : batch_rows(batch) {}
 
 Net::~Net()
 {
@@ -78,6 +78,33 @@ float Net::forward(const std::vector<float>& input_value, const std::vector<floa
 	return get_loss_value();
 }
 
+float Net::forward_batch(const std::vector<std::vector<float>>& input_value, const std::vector<std::vector<float>>& label_value) const
+{
+	layers[0]->GetInputs()->set_batch_data(input_value);
+	y_label->set_batch_data(label_value);
+	for (const auto& it : layers)
+	{
+		it->calculate();
+	}
+	loss->forward_calculate_data();
+	return get_loss_value();
+}
+
+float Net::train_batch(const std::vector<std::vector<float>>& input_value, const std::vector<std::vector<float>>& label_value) const
+{
+	const float loss_value = forward_batch(input_value, label_value);
+	zero_grad_without_parameters();
+	if (backward_mode == MEMO_SEARCH)
+	{
+		backward_memo();
+	}
+	else
+	{
+		backward();
+	}
+	return loss_value;
+}
+
 void Net::backward() const
 {
 	graph::backward_tree(loss);
@@ -121,12 +148,12 @@ void Net::add_layer(int num_of_inputs, int num_of_outputs, FCLayer::ActivationFu
 	if (layers.empty())
 	{
 		// 第一层
-		layers.emplace_back(new FCLayer(num_of_inputs, num_of_outputs, activation_fn));
+		layers.emplace_back(new FCLayer(num_of_inputs, num_of_outputs, activation_fn, batch_rows));
 	}
 	else
 	{
 		// 后续层：将前一层的输出作为当前层的输入
-		layers.emplace_back(new FCLayer(num_of_inputs, num_of_outputs, activation_fn));
+		layers.emplace_back(new FCLayer(num_of_inputs, num_of_outputs, activation_fn, batch_rows));
 
 		Tensor* cur_layer_inputs = (*layers.rbegin())->GetInputs();
 		Tensor* pre_layer_outputs = (*(layers.rbegin() + 1))->GetOutputs();
@@ -141,7 +168,7 @@ void Net::set_loss_function(LossFun fn)
 	delete y_label;
 	loss = new Tensor(1, 1, true);
 	Tensor* last_layer_outputs = (*layers.rbegin())->GetOutputs();
-	y_label = new Tensor(1, last_layer_outputs->get_col_dimension());
+	y_label = new Tensor(batch_rows, last_layer_outputs->get_col_dimension());
 	loss->set_left(last_layer_outputs);
 	loss->set_right(y_label);
 	switch (fn)
