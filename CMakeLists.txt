@@ -14,3 +14,9 @@ add_executable(graph_demo graph_demo.cpp
         Net.cpp
         FCLayer.cpp
         Graph.cpp)
+
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+    add_executable(gemm_demo gemm_demo.cpp)
+    target_link_libraries(gemm_demo PRIVATE OpenMP::OpenMP_CXX)
+endif()
