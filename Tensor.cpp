@@ -364,27 +364,38 @@ void Tensor::forward_calculate_data()
 		break;
 	case CalculateFun::MATRIX_MUL_VECTOR:
 		// 权重 (out x in) 乘以输入 (B x in)，输出 (B x out)
+		// i 外层（并行）、r 内层：一行权重只读一次就服务整个 batch
 		{
 			const int in = left->col_dimension;
-#pragma omp parallel for schedule(static) if (row_dimension >= 4)
-			for (int r = 0; r < row_dimension; ++r)
+			const int rows = row_dimension;
+#pragma omp parallel for schedule(static) if (rows >= 4)
+			for (int i = 0; i < col_dimension; ++i)
 			{
-				const float* x = right->data[row_of(right->row_dimension, r)].data();
-				float* d = data[r].data();
-				for (int i = 0; i < col_dimension; ++i)
+				const float* w = left->data[i].data();
+				for (int r = 0; r < rows; ++r)
 				{
-					const float* w = left->data[i].data();
-					float sum = 0.0f;
-					for (int j = 0; j < in; ++j)
+					const float* x = right->data[row_of(right->row_dimension, r)].data();
+					float s0 = 0.0f;
+					float s1 = 0.0f;
+					float s2 = 0.0f;
+					float s3 = 0.0f;
+					int j = 0;
+					for (; j + 4 <= in; j += 4)
 					{
-						sum += w[j] * x[j];
+						s0 += w[j] * x[j];
+						s1 += w[j + 1] * x[j + 1];
+						s2 += w[j + 2] * x[j + 2];
+						s3 += w[j + 3] * x[j + 3];
 					}
-					d[i] = sum;
+					for (; j < in; ++j)
+					{
+						s0 += w[j] * x[j];
+					}
+					data[r][i] = (s0 + s1) + (s2 + s3);
 				}
 			}
 		}
-		break;
-	case CalculateFun::VECTOR_MUL_VECTOR:
+		break;	case CalculateFun::VECTOR_MUL_VECTOR:
 		for (int r = 0; r < row_dimension; ++r)
 		{
 			const std::vector<float>& x = left->data[row_of(left->row_dimension, r)];
