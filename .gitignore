@@ -13,3 +13,11 @@ output/
 
 # local scratch: pre-fix source backup kept outside version control
 _baseline/
+
+# python package build artifacts
+python/tiny_autograd/*.dll
+python/build/
+python/dist/
+python/*.egg-info/
+__pycache__/
+*.pyc
