@@ -51,8 +51,12 @@ class Tensor
 	[[nodiscard]] std::vector<std::vector<float>>& get_data();
 	[[nodiscard]] const std::vector<std::vector<float>>& get_data() const;
 	[[nodiscard]] const std::vector<float>& get_softmax_data() const;
+	[[nodiscard]] const std::vector<std::vector<float>>& get_softmax_batch() const;
 	[[nodiscard]] const std::vector<Consumer>& get_consumers() const;
 	void set_data(const std::vector<float>& value);
+
+	// 批量写入：一次填满所有行（行数需与 row_dimension 一致）
+	void set_batch_data(const std::vector<std::vector<float>>& value);
 
 	// 清零梯度
 	void zero_grad();
@@ -71,7 +75,7 @@ class Tensor
 	[[nodiscard]] CalculateFun get_calculate_fn() const;
  private:
 	std::vector<std::vector<float>> data; 	// 数据存储
-	std::vector<float> soft_max_data; 		// Softmax结果，用交叉熵做损失函数，反向求导时用到，其他不用
+	std::vector<std::vector<float>> soft_max_data; 		// Softmax结果，用交叉熵做损失函数，反向求导时用到，其他不用
 	std::vector<std::vector<float>> grad;	// 梯度存储
 	std::vector<Consumer> consumers;		// 反向边：谁用了我（记忆化搜索使用）
 	int row_dimension;						// 维度信息
@@ -99,12 +103,25 @@ inline const std::vector<std::vector<float>>& Tensor::get_data() const
 
 inline const std::vector<float>& Tensor::get_softmax_data() const
 {
-	return soft_max_data;
+	return soft_max_data[0];
 }
 
 inline void Tensor::set_data(const std::vector<float>& value)
 {
 	std::copy(value.begin(), value.end(), data[0].begin());
+}
+
+inline const std::vector<std::vector<float>>& Tensor::get_softmax_batch() const
+{
+	return soft_max_data;
+}
+
+inline void Tensor::set_batch_data(const std::vector<std::vector<float>>& value)
+{
+	for (int r = 0; r < row_dimension; ++r)
+	{
+		std::copy(value[r].begin(), value[r].end(), data[r].begin());
+	}
 }
 
 inline void Tensor::zero_grad()
