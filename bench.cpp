@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <iomanip>
 #include <iostream>
 #include <numeric>
 #include <string>
@@ -73,15 +74,18 @@ static float evaluate(Net& nn, const std::vector<std::vector<float>>& X, const s
 
 int main(int argc, char** argv)
 {
-	int train_n = 8000, test_n = 2000, epochs = 3, batch = 10;
+	int train_n = 8000, test_n = 2000, epochs = 3, batch = 10, hidden = 256;
 	float lr = 0.001f;
 	bool buggy = false;
+	bool use_memo = false;
 	for (int i = 1; i < argc; ++i)
 	{
 		if (std::strcmp(argv[i], "--buggy-loop") == 0) buggy = true;
 		else if (std::strcmp(argv[i], "--train") == 0) train_n = std::atoi(argv[++i]);
 		else if (std::strcmp(argv[i], "--test") == 0) test_n = std::atoi(argv[++i]);
 		else if (std::strcmp(argv[i], "--epochs") == 0) epochs = std::atoi(argv[++i]);
+		else if (std::strcmp(argv[i], "--backward") == 0) use_memo = (std::strcmp(argv[++i], "memo") == 0);
+		else if (std::strcmp(argv[i], "--hidden") == 0) hidden = std::atoi(argv[++i]);
 		else if (std::strcmp(argv[i], "--lr") == 0) lr = std::stof(argv[++i]);
 	}
 
@@ -89,20 +93,31 @@ int main(int argc, char** argv)
 	Dataset d = load_mnist(train_n, test_n);
 	std::cerr << "[setup] train=" << train_n << " test=" << test_n
 			  << " epochs=" << epochs << " batch=" << batch << " lr=" << lr
-			  << " buggy_loop=" << (buggy ? 1 : 0) << std::endl;
+			  << " buggy_loop=" << (buggy ? 1 : 0)
+			  << " backward=" << (use_memo ? "memo" : "stack")
+			  << " hidden=" << hidden << std::endl;
 
 	rand_generator().seed(20251102);
 
 	Net nn;
-	nn.add_layer(784, 256, FCLayer::ActivationFun::RELU);
-	nn.add_layer(256, 10, FCLayer::ActivationFun::NONE);
+	if (hidden > 0)
+	{
+		nn.add_layer(784, hidden, FCLayer::ActivationFun::RELU);
+		nn.add_layer(hidden, 10, FCLayer::ActivationFun::NONE);
+	}
+	else
+	{
+		nn.add_layer(784, 10, FCLayer::ActivationFun::NONE);
+	}
 	nn.set_loss_function(Net::LossFun::CROSS_ENTROPY);
 	nn.init_parameters(0.0f, 0.02f);
+	nn.set_backward_mode(use_memo ? Net::BackwardMode::MEMO_SEARCH : Net::BackwardMode::STACK_DFS);
 
 	std::vector<int> index_vec(train_n);
 	std::iota(index_vec.begin(), index_vec.end(), 0);
 
 	long long samples_seen = 0;
+	std::cout << std::setprecision(9);
 	for (int epoch = 0; epoch < epochs; ++epoch)
 	{
 		std::shuffle(index_vec.begin(), index_vec.end(), rand_generator());

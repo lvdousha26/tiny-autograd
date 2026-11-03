@@ -3,6 +3,8 @@
 //
 
 #include <stack>
+#include <functional>
+#include <unordered_set>
 #include <iostream>
 #include "Net.h"
 
@@ -54,7 +56,14 @@ float Net::train(const std::vector<std::vector<float>>& input_value, const std::
 		forward(input_value[i], label_value[i]);
 		loss_value += get_loss_value();
 		zero_grad_without_parameters();
-		backward();
+		if (backward_mode == MEMO_SEARCH)
+		{
+			backward_memo();
+		}
+		else
+		{
+			backward();
+		}
 	}
 	return loss_value;
 }
@@ -103,6 +112,51 @@ void Net::backward() const
 			cur_tensor->backward_calculate_right_grad();
 			tensor_stack.push(right);
 		}
+	}
+}
+
+
+void Net::set_backward_mode(BackwardMode mode)
+{
+	backward_mode = mode;
+}
+
+// 记忆化搜索：每个节点的梯度只求解一次，由消费者向上汇总
+void Net::backward_memo() const
+{
+	if (!loss->is_require_grad() || loss->get_calculate_fn() == Tensor::LEAF)
+	{
+		return;
+	}
+
+	loss->one_grad();
+
+	std::unordered_set<Tensor*> solved;
+	std::function<void(Tensor*)> grad_of = [&](Tensor* z)
+	{
+		if (!z->is_require_grad() || !solved.insert(z).second)
+		{
+			return;
+		}
+		for (const auto& edge : z->get_consumers())
+		{
+			Tensor* consumer = edge.node;
+			grad_of(consumer); // 先保证消费者的梯度已经完整
+			if (edge.slot == 0)
+			{
+				consumer->backward_calculate_left_grad();
+			}
+			else
+			{
+				consumer->backward_calculate_right_grad();
+			}
+		}
+	};
+
+	for (const auto& it : layers)
+	{
+		grad_of(it->GetWeights());
+		grad_of(it->GetBias());
 	}
 }
 

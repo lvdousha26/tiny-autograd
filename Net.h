@@ -12,6 +12,9 @@ class Net
 {
  public:
 	enum LossFun{MEAN_SQUARED, CROSS_ENTROPY}; // 损失函数类型
+
+	// 反向传播的两种实现：显式栈（自底向上填表）与记忆化搜索（自顶向下）
+	enum BackwardMode{STACK_DFS, MEMO_SEARCH};
 	Net();
 
 	Net(const Net&) = delete;
@@ -32,6 +35,12 @@ class Net
 	// 反向传播
 	void backward() const;
 
+	// 记忆化搜索版反向传播（自顶向下 DP，需要 consumer 反向边）
+	void backward_memo() const;
+
+	// 切换反向传播实现
+	void set_backward_mode(BackwardMode mode);
+
 	void zero_grad() const;
 
 	// 参数更新
@@ -48,6 +57,7 @@ class Net
 	Tensor* y_label{};							// 标签张量
 	Tensor* loss{};								// 损失张量
 	void zero_grad_without_parameters() const;
+	BackwardMode backward_mode = STACK_DFS;
 };
 
 inline float Net::get_loss_value() const

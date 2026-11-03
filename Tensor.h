@@ -10,6 +10,13 @@ class Tensor
 {
 
  public:
+
+	// 计算图的一条反向边：node 在第 slot 个输入位置使用了本张量
+	struct Consumer
+	{
+		Tensor* node;
+		int slot;
+	};
 	// 计算操作类型枚举
 	enum CalculateFun {
 		LEAF,               // 叶子节点（输入或参数）
@@ -44,6 +51,7 @@ class Tensor
 	[[nodiscard]] std::vector<std::vector<float>>& get_data();
 	[[nodiscard]] const std::vector<std::vector<float>>& get_data() const;
 	[[nodiscard]] const std::vector<float>& get_softmax_data() const;
+	[[nodiscard]] const std::vector<Consumer>& get_consumers() const;
 	void set_data(const std::vector<float>& value);
 
 	// 清零梯度
@@ -65,6 +73,7 @@ class Tensor
 	std::vector<std::vector<float>> data; 	// 数据存储
 	std::vector<float> soft_max_data; 		// Softmax结果，用交叉熵做损失函数，反向求导时用到，其他不用
 	std::vector<std::vector<float>> grad;	// 梯度存储
+	std::vector<Consumer> consumers;		// 反向边：谁用了我（记忆化搜索使用）
 	int row_dimension;						// 维度信息
 	int col_dimension;						// 维度信息
 	Tensor* left = nullptr;					// 左子节点
@@ -127,15 +136,28 @@ inline Tensor* Tensor::get_right() const
 inline void Tensor::set_left(Tensor* l)
 {
 	left = l;
+	if (l != nullptr)
+	{
+		l->consumers.push_back({this, 0});
+	}
 }
 inline void Tensor::set_right(Tensor* r)
 {
 	right = r;
+	if (r != nullptr)
+	{
+		r->consumers.push_back({this, 1});
+	}
 }
 inline void Tensor::set_calculate_fn(CalculateFun fn)
 {
 	calculate_fn = fn;
 }
+inline const std::vector<Tensor::Consumer>& Tensor::get_consumers() const
+{
+	return consumers;
+}
+
 inline int Tensor::get_row_dimension() const
 {
 	return row_dimension;
