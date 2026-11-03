@@ -28,7 +28,11 @@ class Tensor
 		MATRIX_MUL_VECTOR,  // 矩阵乘向量
 		VECTOR_ASSIGN,      // 向量赋值
 		VECTOR_CROSSENTROPY,// 交叉熵损失
-		VECTOR_SQUARED      // 均方误差损失
+		VECTOR_SQUARED,     // 均方误差损失
+		VECTOR_MUL_VECTOR,  // 逐元素相乘
+		MATRIX_MUL_MATRIX,  // 矩阵乘矩阵
+		TRANSPOSE,          // 转置
+		SOFTMAX             // 按行 softmax
 	};
 
 	// 构造函数

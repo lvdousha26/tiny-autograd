@@ -115,6 +115,63 @@ void Tensor::backward_calculate_left_grad()
 			}
 		}
 		break;
+	case CalculateFun::VECTOR_MUL_VECTOR:
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			std::vector<float>& gl = left->grad[row_of(left->row_dimension, r)];
+			const std::vector<float>& g = this->grad[r];
+			const std::vector<float>& y = right->data[row_of(right->row_dimension, r)];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				gl[i] += g[i] * y[i];
+			}
+		}
+		break;
+	case CalculateFun::MATRIX_MUL_MATRIX:
+		// dL[i][p] += sum_j dC[i][j] * R[p][j]
+		for (int i = 0; i < row_dimension; ++i)
+		{
+			float* gl = left->grad[i].data();
+			const float* grow = this->grad[i].data();
+			for (int p = 0; p < left->col_dimension; ++p)
+			{
+				const float* rrow = right->data[p].data();
+				float acc = 0.0f;
+				for (int j = 0; j < col_dimension; ++j)
+				{
+					acc += grow[j] * rrow[j];
+				}
+				gl[p] += acc;
+			}
+		}
+		break;
+	case CalculateFun::TRANSPOSE:
+		for (int i = 0; i < left->row_dimension; ++i)
+		{
+			for (int j = 0; j < left->col_dimension; ++j)
+			{
+				left->grad[i][j] += this->grad[j][i];
+			}
+		}
+		break;
+	case CalculateFun::SOFTMAX:
+		// dy = y * (g - sum_k g[k] * y[k])
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			std::vector<float>& gl = left->grad[row_of(left->row_dimension, r)];
+			const std::vector<float>& y = data[r];
+			const std::vector<float>& gr = this->grad[r];
+			float dot = 0.0f;
+			for (int j = 0; j < col_dimension; ++j)
+			{
+				dot += gr[j] * y[j];
+			}
+			for (int j = 0; j < col_dimension; ++j)
+			{
+				gl[j] += y[j] * (gr[j] - dot);
+			}
+		}
+		break;
 	case CalculateFun::VECTOR_CROSSENTROPY:
 	{
 		const int rows = left->row_dimension;
@@ -204,6 +261,37 @@ void Tensor::backward_calculate_right_grad()
 	case CalculateFun::VECTOR_LOG:
 	case CalculateFun::VECTOR_RELU:
 	case CalculateFun::VECTOR_ASSIGN:
+	case CalculateFun::VECTOR_MUL_VECTOR:
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			std::vector<float>& gr = right->grad[row_of(right->row_dimension, r)];
+			const std::vector<float>& g = this->grad[r];
+			const std::vector<float>& x = left->data[row_of(left->row_dimension, r)];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				gr[i] += g[i] * x[i];
+			}
+		}
+		break;
+	case CalculateFun::MATRIX_MUL_MATRIX:
+		// dR[p][j] += sum_i L[i][p] * dC[i][j]
+		for (int p = 0; p < right->row_dimension; ++p)
+		{
+			float* gr = right->grad[p].data();
+			for (int i = 0; i < row_dimension; ++i)
+			{
+				const float lv = left->data[i][p];
+				const float* grow = this->grad[i].data();
+				for (int j = 0; j < col_dimension; ++j)
+				{
+					gr[j] += lv * grow[j];
+				}
+			}
+		}
+		break;
+	case CalculateFun::TRANSPOSE:
+	case CalculateFun::SOFTMAX:
+		break;
 	case CalculateFun::VECTOR_CROSSENTROPY:
 	case CalculateFun::VECTOR_SQUARED:
 	case LEAF:
@@ -293,6 +381,76 @@ void Tensor::forward_calculate_data()
 					}
 					d[i] = sum;
 				}
+			}
+		}
+		break;
+	case CalculateFun::VECTOR_MUL_VECTOR:
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			const std::vector<float>& x = left->data[row_of(left->row_dimension, r)];
+			const std::vector<float>& y = right->data[row_of(right->row_dimension, r)];
+			std::vector<float>& d = data[r];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				d[i] = x[i] * y[i];
+			}
+		}
+		break;
+	case CalculateFun::MATRIX_MUL_MATRIX:
+		// C = L(m x k) * R(k x n)；按 p 外层复用 L 的一个元素，写连续
+		{
+			const int m = row_dimension;
+			const int n = col_dimension;
+			const int k = left->col_dimension;
+			for (int i = 0; i < m; ++i)
+			{
+				float* d = data[i].data();
+				const float* lrow = left->data[i].data();
+				for (int j = 0; j < n; ++j)
+				{
+					d[j] = 0.0f;
+				}
+				for (int p = 0; p < k; ++p)
+				{
+					const float lv = lrow[p];
+					const float* rrow = right->data[p].data();
+					for (int j = 0; j < n; ++j)
+					{
+						d[j] += lv * rrow[j];
+					}
+				}
+			}
+		}
+		break;
+	case CalculateFun::TRANSPOSE:
+		for (int i = 0; i < left->row_dimension; ++i)
+		{
+			for (int j = 0; j < left->col_dimension; ++j)
+			{
+				data[j][i] = left->data[i][j];
+			}
+		}
+		break;
+	case CalculateFun::SOFTMAX:
+		// 按行 softmax，先减行最大值保证数值稳定
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			const std::vector<float>& x = left->data[row_of(left->row_dimension, r)];
+			std::vector<float>& d = data[r];
+			float mx = x[0];
+			for (int j = 1; j < col_dimension; ++j)
+			{
+				mx = std::max(mx, x[j]);
+			}
+			float sum = 0.0f;
+			for (int j = 0; j < col_dimension; ++j)
+			{
+				d[j] = std::exp(x[j] - mx);
+				sum += d[j];
+			}
+			for (int j = 0; j < col_dimension; ++j)
+			{
+				d[j] /= sum;
 			}
 		}
 		break;

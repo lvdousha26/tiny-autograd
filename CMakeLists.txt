@@ -21,9 +21,13 @@ add_executable(bench bench.cpp
         FCLayer.cpp
         Graph.cpp)
 
+add_executable(transformer_demo transformer_demo.cpp
+        Tensor.cpp
+        Graph.cpp)
+
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
-    foreach(tgt TorchNN_WYT graph_demo bench)
+    foreach(tgt TorchNN_WYT graph_demo bench transformer_demo)
         target_link_libraries(${tgt} PRIVATE OpenMP::OpenMP_CXX)
     endforeach()
     add_executable(gemm_demo gemm_demo.cpp)
