@@ -88,6 +88,7 @@ void Tensor::backward_calculate_left_grad()
 		// 左操作数是权重 (out x in)：dW[i][j] += sum_r dY[r][i] * X[r][j]
 		{
 			const int in = left->col_dimension;
+#pragma omp parallel for schedule(static) if (row_dimension >= 4)
 			for (int i = 0; i < col_dimension; ++i)
 			{
 				float* gw = left->grad[i].data();
@@ -182,6 +183,7 @@ void Tensor::backward_calculate_right_grad()
 		// 按 i 外层累加到 dX 行上：权重顺序读，dX 常驻缓存
 		{
 			const int in = right->col_dimension;
+#pragma omp parallel for schedule(static) if (row_dimension >= 4)
 			for (int r = 0; r < row_dimension; ++r)
 			{
 				float* gx = right->grad[row_of(right->row_dimension, r)].data();
@@ -276,6 +278,7 @@ void Tensor::forward_calculate_data()
 		// 权重 (out x in) 乘以输入 (B x in)，输出 (B x out)
 		{
 			const int in = left->col_dimension;
+#pragma omp parallel for schedule(static) if (row_dimension >= 4)
 			for (int r = 0; r < row_dimension; ++r)
 			{
 				const float* x = right->data[row_of(right->row_dimension, r)].data();
