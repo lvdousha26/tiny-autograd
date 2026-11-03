@@ -32,7 +32,13 @@ class Tensor
 		VECTOR_MUL_VECTOR,  // 逐元素相乘
 		MATRIX_MUL_MATRIX,  // 矩阵乘矩阵
 		TRANSPOSE,          // 转置
-		SOFTMAX             // 按行 softmax
+		SOFTMAX,             // 按行 softmax
+		VECTOR_SIGMOID,     // sigmoid 激活
+		VECTOR_TANH,        // tanh 激活
+		VECTOR_LEAKY_RELU,  // leaky ReLU，负半轴斜率为 alpha
+		VECTOR_ELU,         // ELU，负半轴斜率为 alpha
+		VECTOR_GELU,        // GELU（精确 erf 形式）
+		VECTOR_SILU         // SiLU / Swish
 	};
 
 	// 构造函数
@@ -73,6 +79,9 @@ class Tensor
 	void set_left(Tensor* l);
 	void set_right(Tensor* r);
 	void set_calculate_fn(CalculateFun fn);
+	// leaky ReLU / ELU 的负半轴斜率
+	void set_alpha(float value);
+	[[nodiscard]] float get_alpha() const;
 	[[nodiscard]] int get_row_dimension() const;
 	[[nodiscard]] int get_col_dimension() const;
 	[[nodiscard]] bool is_require_grad() const;
@@ -87,6 +96,7 @@ class Tensor
 	Tensor* left = nullptr;					// 左子节点
 	Tensor* right = nullptr;				// 右子节点
 	bool require_grad = false;
+	float alpha = 0.0f;
 	CalculateFun calculate_fn = LEAF;		// 是否需要计算梯度
 };
 
@@ -173,6 +183,16 @@ inline void Tensor::set_right(Tensor* r)
 inline void Tensor::set_calculate_fn(CalculateFun fn)
 {
 	calculate_fn = fn;
+}
+
+inline void Tensor::set_alpha(float value)
+{
+	alpha = value;
+}
+
+inline float Tensor::get_alpha() const
+{
+	return alpha;
 }
 inline const std::vector<Tensor::Consumer>& Tensor::get_consumers() const
 {

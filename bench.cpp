@@ -94,9 +94,26 @@ static float evaluate_batch(Net& nn, const std::vector<std::vector<float>>& X,
 	return static_cast<float>(correct) / static_cast<float>(total);
 }
 
+static FCLayer::ActivationFun pick_activation(const char* name)
+{
+	using A = FCLayer::ActivationFun;
+	if (std::strcmp(name, "none") == 0) return A::NONE;
+	if (std::strcmp(name, "relu") == 0) return A::RELU;
+	if (std::strcmp(name, "sigmoid") == 0) return A::SIGMOID;
+	if (std::strcmp(name, "tanh") == 0) return A::TANH;
+	if (std::strcmp(name, "leaky_relu") == 0) return A::LEAKY_RELU;
+	if (std::strcmp(name, "elu") == 0) return A::ELU;
+	if (std::strcmp(name, "gelu") == 0) return A::GELU;
+	if (std::strcmp(name, "silu") == 0) return A::SILU;
+	std::fprintf(stderr, "unknown activation: %s\n", name);
+	std::exit(1);
+}
+
 int main(int argc, char** argv)
 {
 	int train_n = 8000, test_n = 2000, epochs = 3, batch = 10, hidden = 256, gbatch = 1;
+	auto act = FCLayer::ActivationFun::RELU;
+	const char* act_name = "relu";
 	float lr = 0.001f;
 	bool buggy = false;
 	bool use_memo = false;
@@ -115,6 +132,11 @@ int main(int argc, char** argv)
 		}
 		else if (std::strcmp(argv[i], "--hidden") == 0) hidden = std::atoi(argv[++i]);
 		else if (std::strcmp(argv[i], "--gbatch") == 0) gbatch = std::atoi(argv[++i]);
+		else if (std::strcmp(argv[i], "--act") == 0)
+		{
+			act_name = argv[++i];
+			act = pick_activation(act_name);
+		}
 		else if (std::strcmp(argv[i], "--lr") == 0)
 		{
 			lr = std::stof(argv[++i]);
@@ -133,14 +155,15 @@ int main(int argc, char** argv)
 			  << " buggy_loop=" << (buggy ? 1 : 0)
 			  << " backward=" << (backward_given ? (use_memo ? "memo" : "stack") : "auto")
 			  << " hidden=" << hidden
-			  << " gbatch=" << gbatch << std::endl;
+			  << " gbatch=" << gbatch
+			  << " act=" << act_name << std::endl;
 
 	rand_generator().seed(20251102);
 
 	Net nn(gbatch);
 	if (hidden > 0)
 	{
-		nn.add_layer(784, hidden, FCLayer::ActivationFun::RELU);
+		nn.add_layer(784, hidden, act);
 		nn.add_layer(hidden, 10, FCLayer::ActivationFun::NONE);
 	}
 	else

@@ -28,14 +28,34 @@ FCLayer::FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn, int ba
 	intermediate_results.emplace_back(w_x_b);
 
 	// Ìí¼Ó¼¤»îº¯Êý
+	outputs->set_left(w_x_b);
 	switch (activation_fn)
 	{
 	case RELU:
-		outputs->set_left(w_x_b);
 		outputs->set_calculate_fn(Tensor::CalculateFun::VECTOR_RELU);
 		break;
+	case SIGMOID:
+		outputs->set_calculate_fn(Tensor::CalculateFun::VECTOR_SIGMOID);
+		break;
+	case TANH:
+		outputs->set_calculate_fn(Tensor::CalculateFun::VECTOR_TANH);
+		break;
+	case LEAKY_RELU:
+		outputs->set_alpha(0.01f);
+		outputs->set_calculate_fn(Tensor::CalculateFun::VECTOR_LEAKY_RELU);
+		break;
+	case ELU:
+		outputs->set_alpha(1.0f);
+		outputs->set_calculate_fn(Tensor::CalculateFun::VECTOR_ELU);
+		break;
+	case GELU:
+		outputs->set_calculate_fn(Tensor::CalculateFun::VECTOR_GELU);
+		break;
+	case SILU:
+		outputs->set_calculate_fn(Tensor::CalculateFun::VECTOR_SILU);
+		break;
 	case NONE:
-		outputs->set_left(w_x_b);
+	default:
 		outputs->set_calculate_fn(Tensor::CalculateFun::VECTOR_ASSIGN);
 		break;
 	}

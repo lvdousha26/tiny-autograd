@@ -172,6 +172,85 @@ void Tensor::backward_calculate_left_grad()
 			}
 		}
 		break;
+	case CalculateFun::VECTOR_SIGMOID:
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			std::vector<float>& gl = left->grad[row_of(left->row_dimension, r)];
+			const std::vector<float>& ld = left->data[r];
+			const std::vector<float>& gv = this->grad[r];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				const float s = 1.0f / (1.0f + std::exp(-ld[i]));
+				gl[i] += gv[i] * s * (1.0f - s);
+			}
+		}
+		break;
+	case CalculateFun::VECTOR_TANH:
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			std::vector<float>& gl = left->grad[row_of(left->row_dimension, r)];
+			const std::vector<float>& ld = left->data[r];
+			const std::vector<float>& gv = this->grad[r];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				const float th = std::tanh(ld[i]);
+				gl[i] += gv[i] * (1.0f - th * th);
+			}
+		}
+		break;
+	case CalculateFun::VECTOR_LEAKY_RELU:
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			std::vector<float>& gl = left->grad[row_of(left->row_dimension, r)];
+			const std::vector<float>& ld = left->data[r];
+			const std::vector<float>& gv = this->grad[r];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				gl[i] += gv[i] * (ld[i] > 0.0f ? 1.0f : alpha);
+			}
+		}
+		break;
+	case CalculateFun::VECTOR_ELU:
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			std::vector<float>& gl = left->grad[row_of(left->row_dimension, r)];
+			const std::vector<float>& ld = left->data[r];
+			const std::vector<float>& gv = this->grad[r];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				gl[i] += gv[i] * (ld[i] > 0.0f ? 1.0f : alpha * std::exp(ld[i]));
+			}
+		}
+		break;
+	case CalculateFun::VECTOR_GELU:
+		// d/dx = Phi(x) + x * phi(x)，Phi 用 erf 表示，phi 为标准正态密度
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			std::vector<float>& gl = left->grad[row_of(left->row_dimension, r)];
+			const std::vector<float>& ld = left->data[r];
+			const std::vector<float>& gv = this->grad[r];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				const float x = ld[i];
+				const float cdf = 0.5f * (1.0f + std::erf(x * 0.70710678f));
+				const float pdf = 0.39894228f * std::exp(-0.5f * x * x);
+				gl[i] += gv[i] * (cdf + x * pdf);
+			}
+		}
+		break;
+	case CalculateFun::VECTOR_SILU:
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			std::vector<float>& gl = left->grad[row_of(left->row_dimension, r)];
+			const std::vector<float>& ld = left->data[r];
+			const std::vector<float>& gv = this->grad[r];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				const float s = 1.0f / (1.0f + std::exp(-ld[i]));
+				gl[i] += gv[i] * (s + ld[i] * s * (1.0f - s));
+			}
+		}
+		break;
 	case CalculateFun::VECTOR_CROSSENTROPY:
 	{
 		const int rows = left->row_dimension;
@@ -292,6 +371,12 @@ void Tensor::backward_calculate_right_grad()
 	case CalculateFun::TRANSPOSE:
 	case CalculateFun::SOFTMAX:
 		break;
+	case CalculateFun::VECTOR_SIGMOID:
+	case CalculateFun::VECTOR_TANH:
+	case CalculateFun::VECTOR_LEAKY_RELU:
+	case CalculateFun::VECTOR_ELU:
+	case CalculateFun::VECTOR_GELU:
+	case CalculateFun::VECTOR_SILU:
 	case CalculateFun::VECTOR_CROSSENTROPY:
 	case CalculateFun::VECTOR_SQUARED:
 	case LEAF:
@@ -462,6 +547,73 @@ void Tensor::forward_calculate_data()
 			for (int j = 0; j < col_dimension; ++j)
 			{
 				d[j] /= sum;
+			}
+		}
+		break;
+	case CalculateFun::VECTOR_SIGMOID:
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			const std::vector<float>& x = left->data[row_of(left->row_dimension, r)];
+			std::vector<float>& d = data[r];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				d[i] = 1.0f / (1.0f + std::exp(-x[i]));
+			}
+		}
+		break;
+	case CalculateFun::VECTOR_TANH:
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			const std::vector<float>& x = left->data[row_of(left->row_dimension, r)];
+			std::vector<float>& d = data[r];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				d[i] = std::tanh(x[i]);
+			}
+		}
+		break;
+	case CalculateFun::VECTOR_LEAKY_RELU:
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			const std::vector<float>& x = left->data[row_of(left->row_dimension, r)];
+			std::vector<float>& d = data[r];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				d[i] = x[i] > 0.0f ? x[i] : alpha * x[i];
+			}
+		}
+		break;
+	case CalculateFun::VECTOR_ELU:
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			const std::vector<float>& x = left->data[row_of(left->row_dimension, r)];
+			std::vector<float>& d = data[r];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				d[i] = x[i] > 0.0f ? x[i] : alpha * (std::exp(x[i]) - 1.0f);
+			}
+		}
+		break;
+	case CalculateFun::VECTOR_GELU:
+		// 精确形式：0.5 * x * (1 + erf(x / sqrt(2)))
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			const std::vector<float>& x = left->data[row_of(left->row_dimension, r)];
+			std::vector<float>& d = data[r];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				d[i] = 0.5f * x[i] * (1.0f + std::erf(x[i] * 0.70710678f));
+			}
+		}
+		break;
+	case CalculateFun::VECTOR_SILU:
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			const std::vector<float>& x = left->data[row_of(left->row_dimension, r)];
+			std::vector<float>& d = data[r];
+			for (int i = 0; i < col_dimension; ++i)
+			{
+				d[i] = x[i] / (1.0f + std::exp(-x[i]));
 			}
 		}
 		break;

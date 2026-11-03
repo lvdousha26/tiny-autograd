@@ -81,7 +81,10 @@ _lib.ta_forward_probs.argtypes = [
     ctypes.POINTER(ctypes.c_float),
 ]
 
-_ACTIVATIONS = {"none": 0, "relu": 1}
+_ACTIVATIONS = {
+    "none": 0, "relu": 1, "sigmoid": 2, "tanh": 3,
+    "leaky_relu": 4, "elu": 5, "gelu": 6, "silu": 7,
+}
 _LOSSES = {"mse": 0, "cross_entropy": 1, "ce": 1}
 _BACKWARD = {"stack": 0, "memo": 1}
 

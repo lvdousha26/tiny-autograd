@@ -10,7 +10,8 @@
 class FCLayer
 {
  public:
-	enum ActivationFun{NONE, RELU}; // 激活函数
+	// NONE 为恒等；LEAKY_RELU 斜率 0.01，ELU 斜率 1.0
+	enum ActivationFun{NONE, RELU, SIGMOID, TANH, LEAKY_RELU, ELU, GELU, SILU}; // 激活函数
 
 	// 构造函数：创建层并构建计算图
 	// batch 为该层一次处理的样本数（行数），默认 1 表示逐样本

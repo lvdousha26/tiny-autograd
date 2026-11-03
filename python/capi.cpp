@@ -86,7 +86,16 @@ extern "C"
 			set_error("add_layer must be called before set_loss");
 			return -1;
 		}
-		const auto fn = activation == 0 ? FCLayer::ActivationFun::NONE : FCLayer::ActivationFun::RELU;
+		static const FCLayer::ActivationFun kActs[] = {
+			FCLayer::NONE, FCLayer::RELU, FCLayer::SIGMOID, FCLayer::TANH,
+			FCLayer::LEAKY_RELU, FCLayer::ELU, FCLayer::GELU, FCLayer::SILU
+		};
+		if (activation < 0 || activation > 7)
+		{
+			set_error("unknown activation code");
+			return -1;
+		}
+		const auto fn = kActs[activation];
 		try
 		{
 			handle->net.add_layer(num_inputs, num_outputs, fn);
