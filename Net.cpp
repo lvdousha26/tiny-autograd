@@ -192,6 +192,8 @@ void Net::add_layer(int num_of_inputs, int num_of_outputs, FCLayer::ActivationFu
 
 void Net::set_loss_function(LossFun fn)
 {
+	loss_fn = fn;
+	loss_created = true;
 	delete loss;
 	delete y_label;
 	loss = new Tensor(1, 1, true);
@@ -210,6 +212,59 @@ void Net::set_loss_function(LossFun fn)
 	}
 }
 
+void Net::resize_batch(int new_batch)
+{
+	if (new_batch < 1 || new_batch == batch_rows || layers.empty())
+	{
+		return;
+	}
 
+	// 先把「图的定义」和「学到的参数」都拷出来
+	struct Spec
+	{
+		int in = 0;
+		int out = 0;
+		int top_k = 0;
+		FCLayer::ActivationFun fn = FCLayer::NONE;
+		std::vector<std::vector<float>> w;
+		std::vector<std::vector<float>> b;
+	};
+	std::vector<Spec> specs;
+	specs.reserve(layers.size());
+	for (const auto* layer : layers)
+	{
+		Spec s;
+		s.in = layer->GetWeights()->get_col_dimension();
+		s.out = layer->GetWeights()->get_row_dimension();
+		s.fn = layer->GetActivationFn();
+		s.top_k = layer->GetTopK();
+		s.w = layer->GetWeights()->get_data();
+		s.b = layer->GetBias()->get_data();
+		specs.push_back(std::move(s));
+	}
+	const LossFun saved_loss = loss_fn;
+	const bool had_loss = loss_created;
 
+	for (auto* layer : layers)
+	{
+		delete layer;
+	}
+	layers.clear();
+	delete loss;
+	loss = nullptr;
+	delete y_label;
+	y_label = nullptr;
 
+	batch_rows = new_batch;
+	for (const auto& s : specs)
+	{
+		add_layer(s.in, s.out, s.fn, s.top_k);
+		layers.back()->GetWeights()->get_data() = s.w;
+		layers.back()->GetBias()->get_data() = s.b;
+	}
+	if (had_loss)
+	{
+		set_loss_function(saved_loss);
+	}
+	// sparse_coeff / sparse_layer / backward_mode 都是成员，重建后依然生效
+}

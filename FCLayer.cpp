@@ -5,7 +5,8 @@
 #include "utils.h"
 #include "Net.h"
 
-FCLayer::FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn, int batch, int top_k) : activation_fn(fn)
+FCLayer::FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn, int batch, int top_k)
+	: activation_fn(fn), top_k(top_k)
 {
 	// 创建各种Tensor
 	inputs = new Tensor(batch, num_of_inputs, true);

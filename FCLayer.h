@@ -32,6 +32,7 @@ class FCLayer
 	[[nodiscard]] Tensor* GetWeights() const;
 	[[nodiscard]] Tensor* GetBias() const;
 	[[nodiscard]] ActivationFun GetActivationFn() const;
+	[[nodiscard]] int GetTopK() const { return top_k; }
 
 	// 参数更新
 	void update_parameters(float learn_rate) const;
@@ -45,6 +46,7 @@ class FCLayer
 	Tensor* bias;	 //q*1 偏置向量
 	std::vector<Tensor*> intermediate_results; // 中间计算结果
 	ActivationFun activation_fn; // 激活函数类型
+	int top_k = 0;               // TOPK 层每行保留几个（重建图时要带回去）
 };
 
 inline Tensor* FCLayer::GetInputs() const

@@ -3,6 +3,7 @@
 //   2) Net::set_sparse_penalty 往隐层输出注入的 L1 梯度
 // 这两个是 Python 包训练 SAE 时全部「非标准」的部分，所以单独验一遍。
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -180,10 +181,137 @@ static void check_sparse_penalty()
 	printf("dL/dW_enc : max |analytic - numeric| = %.3e\n", worst);
 }
 
+static void check_dynamic_batch()
+{
+	const int in = 4;
+	const int hidden = 6;
+	const int k = 3;
+
+	auto build = [&](int rows)
+	{
+		Net* n = new Net(rows);
+		n->add_layer(in, hidden, FCLayer::TOPK, k);
+		n->add_layer(hidden, in, FCLayer::NONE);
+		n->set_loss_function(Net::MEAN_SQUARED);
+		n->set_sparse_penalty(0.05f, 0);
+		return n;
+	};
+	auto rows_of = [](int rows, int cols)
+	{
+		std::vector<std::vector<float>> v(rows, std::vector<float>(cols));
+		for (int r = 0; r < rows; ++r)
+		{
+			for (int c = 0; c < cols; ++c)
+			{
+				v[r][c] = 0.3f * (r + 1) - 0.1f * (c + 1);
+			}
+		}
+		return v;
+	};
+
+	Net* net = build(4);
+	net->init_parameters(0.0f, 0.3f);
+	const auto x4 = rows_of(4, in);
+	const auto y4 = rows_of(4, in);
+	net->train_batch(x4, y4);          // 先训练一步，让参数不再是初值
+
+	const auto w0 = net->layer_weights(0)->get_data();
+	const auto w1 = net->layer_weights(1)->get_data();
+	const auto b0 = net->layer_bias(0)->get_data();
+	const float alpha_before = net->layer_outputs(0)->get_alpha();
+
+	printf("\n--- dynamic batch (rebuild graph, keep params) ---\n");
+	net->resize_batch(7);
+	printf("graph rows 4 -> %d\n", net->get_batch_rows());
+	bool same = true;
+	const auto& nw0 = net->layer_weights(0)->get_data();
+	const auto& nw1 = net->layer_weights(1)->get_data();
+	const auto& nb0 = net->layer_bias(0)->get_data();
+	for (int i = 0; i < static_cast<int>(w0.size()); ++i)
+	{
+		for (int j = 0; j < static_cast<int>(w0[i].size()); ++j)
+		{
+			same &= (w0[i][j] == nw0[i][j]);
+		}
+	}
+	for (int i = 0; i < static_cast<int>(w1.size()); ++i)
+	{
+		for (int j = 0; j < static_cast<int>(w1[i].size()); ++j)
+		{
+			same &= (w1[i][j] == nw1[i][j]);
+		}
+	}
+	for (int i = 0; i < static_cast<int>(b0.size()); ++i)
+	{
+		for (int j = 0; j < static_cast<int>(b0[i].size()); ++j)
+		{
+			same &= (b0[i][j] == nb0[i][j]);
+		}
+	}
+	same &= (alpha_before == net->layer_outputs(0)->get_alpha());
+	printf("params / TopK k preserved after rebuild: %s\n", same ? "yes" : "NO");
+
+	// 用 7 行训练一步，再缩回 4 行，参数必须带着这步的更新
+	const auto x7 = rows_of(7, in);
+	const auto y7 = rows_of(7, in);
+	net->train_batch(x7, y7);
+	net->resize_batch(3);
+	const auto x3 = rows_of(3, in);
+	const auto y3 = rows_of(3, in);
+	const float loss_dynamic = net->train_batch(x3, y3);
+	const auto grad_dynamic = net->layer_weights(0)->get_grad();
+
+	// 同参数、原生 3 行图，梯度应逐元素一致
+	Net* fresh = build(3);
+	fresh->layer_weights(0)->get_data() = net->layer_weights(0)->get_data();
+	fresh->layer_weights(1)->get_data() = net->layer_weights(1)->get_data();
+	fresh->layer_bias(0)->get_data() = net->layer_bias(0)->get_data();
+	fresh->layer_bias(1)->get_data() = net->layer_bias(1)->get_data();
+	const float loss_fresh = fresh->train_batch(x3, y3);
+	const auto& grad_fresh = fresh->layer_weights(0)->get_grad();
+	double worst = 0.0;
+	for (int i = 0; i < static_cast<int>(grad_dynamic.size()); ++i)
+	{
+		for (int j = 0; j < static_cast<int>(grad_dynamic[i].size()); ++j)
+		{
+			worst = std::max(worst, static_cast<double>(
+				std::fabs(grad_dynamic[i][j] - grad_fresh[i][j])));
+		}
+	}
+	printf("loss: rebuilt %.6f vs native-3-row %.6f\n", loss_dynamic, loss_fresh);
+	printf("dL/dW max diff between rebuilt graph and native graph = %.3e\n", worst);
+
+	// 重建开销：呼应 graph_demo 里 rebuild vs reuse 的 7.4x
+	const int iters = 2000;
+	auto t0 = std::chrono::steady_clock::now();
+	for (int i = 0; i < iters; ++i)
+	{
+		net->resize_batch(3 + (i & 1));
+	}
+	auto t1 = std::chrono::steady_clock::now();
+	const double per_resize = std::chrono::duration<double, std::micro>(t1 - t0).count() / iters;
+	net->resize_batch(2);
+	const auto x2 = rows_of(2, in);
+	const auto y2 = rows_of(2, in);
+	auto t2 = std::chrono::steady_clock::now();
+	for (int i = 0; i < iters; ++i)
+	{
+		net->train_batch(x2, y2);
+	}
+	auto t3 = std::chrono::steady_clock::now();
+	const double per_step = std::chrono::duration<double, std::micro>(t3 - t2).count() / iters;
+	printf("resize %.3f us  vs  one train step %.3f us  (%.1fx)\n",
+		per_resize, per_step, per_resize / per_step);
+
+	delete fresh;
+	delete net;
+}
+
 int main()
 {
 	rand_generator().seed(2026u);   // 参数初始化可复现
 	check_topk();
 	check_sparse_penalty();
+	check_dynamic_batch();
 	return 0;
 }

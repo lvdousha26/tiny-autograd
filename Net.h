@@ -28,6 +28,12 @@ class Net
 	// 设置损失函数
 	void set_loss_function(LossFun fn);
 
+	// 动态图：按新的批大小重建整张图，但把每层参数、结构、损失与稀疏设置带过去。
+	// 这就是 graph_demo.cpp 里「动态建图」真正落到 Net 上的版本：
+	// 图的形状（行数）由运行时数据决定，且训练不中断。
+	void resize_batch(int new_batch);
+	[[nodiscard]] int get_batch_rows() const { return batch_rows; }
+
 	// 在指定层的输出上加 L1 稀疏惩罚（梯度直接注入该层输出的 grad，
 	// 后续反向传播会在此基础上累加，等价于给损失加 lambda * mean(sum z)）
 	void set_sparse_penalty(float coeff, int layer);
@@ -84,6 +90,8 @@ class Net
 	BackwardMode backward_mode = MEMO_SEARCH;
 	float sparse_coeff = 0.0f;
 	int sparse_layer = -1;
+	LossFun loss_fn = MEAN_SQUARED;   // 重建图后据此恢复损失节点
+	bool loss_created = false;
 };
 
 inline Net::BackwardMode Net::get_backward_mode() const
