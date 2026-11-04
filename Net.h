@@ -60,6 +60,7 @@ class Net
 	[[nodiscard]] const std::vector<float>& get_y_hat_softmax() const;
 	[[nodiscard]] const std::vector<float>& get_y_hat_softmax(int row) const;
 	[[nodiscard]] inline const std::vector<float>& get_y_hat() const;
+	[[nodiscard]] const std::vector<float>& get_y_hat(int row) const;
 	~Net();
  private:
 	std::vector<FCLayer*> layers; 				// ÍøÂç²ã¼¯ºÏ
@@ -84,6 +85,11 @@ inline float Net::get_loss_value() const
 inline const std::vector<float>& Net::get_y_hat_softmax() const
 {
 	return (*layers.rbegin())->GetOutputs()->get_softmax_data();
+}
+
+inline const std::vector<float>& Net::get_y_hat(int row) const
+{
+	return (*layers.rbegin())->GetOutputs()->get_data()[row];
 }
 
 inline const std::vector<float>& Net::get_y_hat_softmax(int row) const

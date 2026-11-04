@@ -5,6 +5,17 @@
 #include <numeric>
 #include <cmath>
 #include "Tensor.h"
+
+// ---------------------------------------------------------------------------
+// 一次 omp parallel 区域的启动开销在几十微秒量级（16 线程时更贵）。
+// 只有计算量足够大时才值得开线程：2 -> 1 的线性回归每步才几十次乘加，
+// 却要为前向 + 两处反向各开一次并行区，实测把 12 秒全花在调度上。
+// 这里按「每次并行迭代的实际乘加数」设阈值，小网络自动退回串行。
+// ---------------------------------------------------------------------------
+static inline bool worth_parallel(long long work)
+{
+	return work >= 1LL << 14;
+}
 Tensor::Tensor(int row_dim, int col_dim, bool require_grad)
 	: row_dimension(row_dim), col_dimension(col_dim), require_grad(require_grad)
 {
@@ -88,7 +99,7 @@ void Tensor::backward_calculate_left_grad()
 		// 左操作数是权重 (out x in)：dW[i][j] += sum_r dY[r][i] * X[r][j]
 		{
 			const int in = left->col_dimension;
-#pragma omp parallel for schedule(static) if (row_dimension >= 4)
+#pragma omp parallel for schedule(static) if (worth_parallel(static_cast<long long>(col_dimension) * row_dimension * left->col_dimension))
 			for (int i = 0; i < col_dimension; ++i)
 			{
 				float* gw = left->grad[i].data();
@@ -319,7 +330,7 @@ void Tensor::backward_calculate_right_grad()
 		// 按 i 外层累加到 dX 行上：权重顺序读，dX 常驻缓存
 		{
 			const int in = right->col_dimension;
-#pragma omp parallel for schedule(static) if (row_dimension >= 4)
+#pragma omp parallel for schedule(static) if (worth_parallel(static_cast<long long>(row_dimension) * col_dimension * right->col_dimension))
 			for (int r = 0; r < row_dimension; ++r)
 			{
 				float* gx = right->grad[row_of(right->row_dimension, r)].data();
@@ -453,7 +464,7 @@ void Tensor::forward_calculate_data()
 		{
 			const int in = left->col_dimension;
 			const int rows = row_dimension;
-#pragma omp parallel for schedule(static) if (rows >= 4)
+#pragma omp parallel for schedule(static) if (worth_parallel(static_cast<long long>(col_dimension) * rows * left->col_dimension))
 			for (int i = 0; i < col_dimension; ++i)
 			{
 				const float* w = left->data[i].data();
