@@ -78,7 +78,10 @@ C++ 侧的 `sparse_demo.cpp` 对 TOPK 反传和 L1 梯度注入都做了中心�
 
 ## 注意
 
-- 图是**静态**的，行数在 `ta.Net(batch=...)` 时固定；`train_batch` 的样本数必须等于 batch。
-- `predict_proba` / `forward_layer` 会自动按 batch 切块前向，所以喂任意样本数都行。
+- 图默认是**动态**的：`ta.Net(batch=256, dynamic=True)` 时 `train_batch` 可以喂任意行数，
+  引擎会按实际行数重建计算图并保留全部参数（`net.graph_rows` 可查当前行数，
+  `net.resize(n)` 可显式改行数）。`dynamic=False` 则退回固定形状图，行数不符会抛 `RuntimeError`
+  —— 少一次重建，微批特别多时能省一点开销。
+- `predict_proba` / `forward_layer` / `forward_hidden` 会自动按 batch 切块前向，所以喂任意样本数都行。
 - `predict_proba` 需要 `loss="cross_entropy"`（否则 softmax 不会被计算）。
 - 目前只暴露了全连接网络 + TopK / LN 等算子；任意构图级别的图 API 还没做 Python 绑定。

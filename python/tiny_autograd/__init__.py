@@ -118,9 +118,18 @@ _lib.ta_get_weight_grad.argtypes = [
     ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_float),
 ]
 
+_lib.ta_set_dynamic.restype = ctypes.c_int
+_lib.ta_set_dynamic.argtypes = [ctypes.c_void_p, ctypes.c_int]
+
+_lib.ta_batch.restype = ctypes.c_int
+_lib.ta_batch.argtypes = [ctypes.c_void_p]
+
+_lib.ta_resize_batch.restype = ctypes.c_int
+_lib.ta_resize_batch.argtypes = [ctypes.c_void_p, ctypes.c_int]
+
 _WHICH = {"outputs": 0, "weights": 1, "bias": 2, "inputs": 3}
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 _ACTIVATIONS = {
     "none": 0, "relu": 1, "sigmoid": 2, "tanh": 3,
@@ -150,14 +159,20 @@ def manual_seed(seed: int) -> None:
 
 
 class Net:
-    """一个全连接网络。batch 决定一次前向处理多少样本，构建后不可变。"""
+    """一个全连接网络。
 
-    def __init__(self, batch: int = 1):
+    ``batch`` 只是**标称**批大小（决定推理时怎么切块）。开启动态图（默认）后，
+    ``train_batch`` 可以喂任意行数：引擎会按实际行数重建计算图并保留已学到的参数。
+    静态模式（``dynamic=False``）则要求行数严格一致，省掉重建开销。
+    """
+
+    def __init__(self, batch: int = 1, dynamic: bool = True):
         self._h = _lib.ta_create(int(batch))
         if not self._h:
             raise RuntimeError(_error())
         self._batch = int(batch)
         self._built = False
+        self.set_dynamic(dynamic)
 
     def __del__(self):
         h = getattr(self, "_h", None)
@@ -166,7 +181,10 @@ class Net:
             self._h = None
 
     def __repr__(self):
-        return f"<tiny_autograd.Net batch={self._batch} in={self.in_dim} out={self.out_dim}>"
+        return (
+            f"<tiny_autograd.Net batch={self._batch} graph_rows={self.graph_rows} "
+            f"dynamic={self.dynamic} in={self.in_dim} out={self.out_dim}>"
+        )
 
     def _check(self, rc: int):
         if rc != 0:
@@ -195,6 +213,26 @@ class Net:
         self._check(_lib.ta_set_backward(self._h, _BACKWARD[mode]))
         return self
 
+    def set_dynamic(self, on: bool = True) -> "Net":
+        """动态图开关：行数变化时自动重建图（参数不丢）。"""
+        self._dynamic = bool(on)
+        self._check(_lib.ta_set_dynamic(self._h, int(self._dynamic)))
+        return self
+
+    @property
+    def dynamic(self) -> bool:
+        return bool(getattr(self, "_dynamic", True))
+
+    @property
+    def graph_rows(self) -> int:
+        """当前计算图实际的行数（重建后会变）。"""
+        return int(_lib.ta_batch(self._h))
+
+    def resize(self, n: int) -> "Net":
+        """显式把计算图重建为 n 行（保留已学到的参数）。"""
+        self._check(_lib.ta_resize_batch(self._h, int(n)))
+        return self
+
     @property
     def in_dim(self) -> int:
         return _lib.ta_in_dim(self._h)
@@ -204,11 +242,12 @@ class Net:
         return _lib.ta_out_dim(self._h)
 
     def train_batch(self, x, y) -> float:
-        """一次前向 + 反向，返回这一批的平均损失。样本数必须等于 batch。"""
+        """一次前向 + 反向，返回这一批的平均损失。
+
+        动态图模式下可以喂任意行数；引擎会按实际行数重建图并保留参数。
+        """
         xa = _as_f32(x)
         ya = _as_f32(y)
-        if xa.shape[0] != self._batch:
-            raise ValueError(f"样本数 {xa.shape[0]} 与 batch {self._batch} 不一致")
         loss = _lib.ta_train_batch(self._h, _ptr(xa), _ptr(ya), int(xa.shape[0]))
         if loss < 0:
             raise RuntimeError(_error())
@@ -343,7 +382,8 @@ def train(
         order = rng.permutation(n) if shuffle else np.arange(n)
         total = 0.0
         steps = 0
-        for off in range(0, n - batch + 1, batch):
+        # 动态图允许最后一批不足 batch，不再丢样本
+        for off in range(0, n, batch):
             idx = order[off: off + batch]
             loss = net.train_batch(xa[idx], ya[idx])
             net.sgd(lr)

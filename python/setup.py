@@ -61,7 +61,7 @@ class BuildPy(build_py):
 
 setup(
     name="tiny-autograd",
-    version="0.2.0",
+    version="0.3.0",
     description="A tiny C++ autograd engine exposed to Python through a C ABI",
     packages=["tiny_autograd"],
     package_data={"tiny_autograd": ["*.dll"]},

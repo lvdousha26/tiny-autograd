@@ -22,6 +22,7 @@ namespace
 		int in_dim = 0;
 		int out_dim = 0;
 		bool loss_set = false;
+		bool dynamic = true;   // 行数变化时自动重建图（保留参数）
 		explicit Handle(int b) : net(b), batch(b) {}
 	};
 
@@ -52,6 +53,23 @@ namespace
 			std::memcpy(rows[i].data(), data + static_cast<size_t>(i) * cols, sizeof(float) * cols);
 		}
 		return rows;
+	}
+
+	// 让图适配 n 行：dynamic 模式下按 n 重建图（参数不丢），否则要求行数一致
+	bool adapt(Handle* h, int n)
+	{
+		const int rows = h->net.get_batch_rows();
+		if (n == rows)
+		{
+			return true;
+		}
+		if (!h->dynamic || n < 1)
+		{
+			set_error("sample count differs from the graph batch (static mode)");
+			return false;
+		}
+		h->net.resize_batch(n);
+		return true;
 	}
 
 	Tensor* layer_tensor(Handle* h, int idx, int which, const char** err)
@@ -177,14 +195,37 @@ extern "C"
 	TA_API float ta_train_batch(void* h, const float* x, const float* y, int n)
 	{
 		auto* handle = static_cast<Handle*>(h);
-		if (n != handle->batch)
+		if (!adapt(handle, n))
 		{
-			set_error("sample count must equal the batch size given to ta_create");
 			return -1.0f;
 		}
 		const auto xs = to_rows(x, n, handle->in_dim);
 		const auto ys = to_rows(y, n, handle->out_dim);
 		return handle->net.train_batch(xs, ys);
+	}
+
+	TA_API int ta_set_dynamic(void* h, int on)
+	{
+		static_cast<Handle*>(h)->dynamic = (on != 0);
+		return 0;
+	}
+
+	TA_API int ta_batch(void* h)
+	{
+		return static_cast<Handle*>(h)->net.get_batch_rows();
+	}
+
+	// 显式按 n 行重建图（参数保留），不跑前向
+	TA_API int ta_resize_batch(void* h, int n)
+	{
+		auto* handle = static_cast<Handle*>(h);
+		if (n < 1)
+		{
+			set_error("n must be >= 1");
+			return -1;
+		}
+		handle->net.resize_batch(n);
+		return 0;
 	}
 
 	TA_API void ta_sgd(void* h, float lr)
@@ -201,22 +242,19 @@ extern "C"
 	TA_API int ta_forward_probs(void* h, const float* x, int n, float* out)
 	{
 		auto* handle = static_cast<Handle*>(h);
-		if (n > handle->batch)
+		if (n < 1)
 		{
-			set_error("n exceeds batch size");
+			set_error("n must be >= 1");
 			return -1;
 		}
-		std::vector<std::vector<float>> xs(n, std::vector<float>(handle->in_dim, 0.0f));
-		for (int i = 0; i < n; ++i)
+		if (n > handle->net.get_batch_rows() && !adapt(handle, n))
 		{
-			std::memcpy(xs[i].data(), x + static_cast<size_t>(i) * handle->in_dim, sizeof(float) * handle->in_dim);
+			return -1;
 		}
-		// 补齐到 batch 行，避免图里的行数不匹配
-		for (int i = n; i < handle->batch; ++i)
-		{
-			xs.push_back(std::vector<float>(handle->in_dim, 0.0f));
-		}
-		const auto ys = std::vector<std::vector<float>>(handle->batch, std::vector<float>(handle->out_dim, 0.0f));
+		const int rows = handle->net.get_batch_rows();
+		const auto xs = padded_input(x, n, handle->in_dim, rows);
+		const auto ys = std::vector<std::vector<float>>(
+			rows, std::vector<float>(handle->out_dim, 0.0f));
 		handle->net.forward_batch(xs, ys);
 		for (int i = 0; i < n; ++i)
 		{
@@ -288,9 +326,9 @@ extern "C"
 	TA_API int ta_forward_layer(void* h, const float* x, int n, int layer, float* out)
 	{
 		auto* handle = static_cast<Handle*>(h);
-		if (n < 1 || n > handle->batch)
+		if (n < 1)
 		{
-			set_error("n must be in [1, batch]");
+			set_error("n must be >= 1");
 			return -1;
 		}
 		if (!handle->loss_set)
@@ -298,6 +336,11 @@ extern "C"
 			set_error("call set_loss before forward_layer");
 			return -1;
 		}
+		if (n > handle->net.get_batch_rows() && !adapt(handle, n))
+		{
+			return -1;
+		}
+		const int rows = handle->net.get_batch_rows();
 		const char* err = nullptr;
 		Tensor* t = layer_tensor(handle, layer, 0, &err);
 		if (t == nullptr)
@@ -305,9 +348,9 @@ extern "C"
 			set_error(err);
 			return -1;
 		}
-		const auto xs = padded_input(x, n, handle->in_dim, handle->batch);
+		const auto xs = padded_input(x, n, handle->in_dim, rows);
 		const auto ys = std::vector<std::vector<float>>(
-			handle->batch, std::vector<float>(handle->out_dim, 0.0f));
+			rows, std::vector<float>(handle->out_dim, 0.0f));
 		handle->net.forward_batch(xs, ys);
 		const int cols = t->get_col_dimension();
 		for (int i = 0; i < n; ++i)
