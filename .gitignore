@@ -21,3 +21,9 @@ python/dist/
 python/*.egg-info/
 __pycache__/
 *.pyc
+
+# CUDA
+*.lib
+*.exp
+*.cu.utf8
+cuda/*.exe
