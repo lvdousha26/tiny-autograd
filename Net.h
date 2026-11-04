@@ -22,10 +22,22 @@ class Net
 	Net& operator=(const Net&) = delete;
 
 	// 添加网络层
-	void add_layer(int num_of_inputs, int num_of_outputs, FCLayer::ActivationFun fn);
+	// top_k 只对 TOPK 激活有意义
+	void add_layer(int num_of_inputs, int num_of_outputs, FCLayer::ActivationFun fn, int top_k = 0);
 
 	// 设置损失函数
 	void set_loss_function(LossFun fn);
+
+	// 在指定层的输出上加 L1 稀疏惩罚（梯度直接注入该层输出的 grad，
+	// 后续反向传播会在此基础上累加，等价于给损失加 lambda * mean(sum z)）
+	void set_sparse_penalty(float coeff, int layer);
+
+	// 供 Python/C API 读取中间层与参数
+	[[nodiscard]] int layer_count() const { return static_cast<int>(layers.size()); }
+	[[nodiscard]] Tensor* layer_inputs(int i) const { return layers.at(i)->GetInputs(); }
+	[[nodiscard]] Tensor* layer_outputs(int i) const { return layers.at(i)->GetOutputs(); }
+	[[nodiscard]] Tensor* layer_weights(int i) const { return layers.at(i)->GetWeights(); }
+	[[nodiscard]] Tensor* layer_bias(int i) const { return layers.at(i)->GetBias(); }
 
 	// 训练和预测
 	float train(const std::vector<std::vector<float>>& input_value, const std::vector<std::vector<float>>& label_value) const;
@@ -70,6 +82,8 @@ class Net
 	void zero_grad_without_parameters() const;
 	// 默认走记忆化搜索：支持 DAG、且会剪掉无消费者的分支（实测更快）
 	BackwardMode backward_mode = MEMO_SEARCH;
+	float sparse_coeff = 0.0f;
+	int sparse_layer = -1;
 };
 
 inline Net::BackwardMode Net::get_backward_mode() const

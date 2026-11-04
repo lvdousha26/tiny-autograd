@@ -40,9 +40,45 @@ print(net.predict(x_test))
 python examples/train_mnist.py --train 8000 --epochs 12 --lr 0.12 --seed 7
 ```
 
+## 稀疏自编码器支持
+
+引擎里新增了 `TOPK` 算子（逐行 ReLU 后只保留前 k 个正值）和隐层 L1 惩罚，
+所以同一个 `Net` 可以直接拿来训 SAE，不必再手写梯度：
+
+```python
+import numpy as np
+import tiny_autograd as ta
+
+ta.manual_seed(0)
+net = (ta.Net(batch=256)
+         .add_topk_layer(64, 128, 4)     # 编码器：每行恰好 4 个特征点火
+         .add_layer(128, 64, "none")    # 解码器：线性重构
+         .set_loss("mse")               # 目标 y 就是输入 x
+         .set_backward("memo"))
+net.init_parameters(0.0, 0.1)
+net.set_sparse_penalty(0.05, 0)         # 可选：给隐层加 L1（TopK 时一般不用）
+
+net.train_batch(x[:256], x[:256])       # 一次前向 + 反向，返回平均损失
+net.sgd(0.05)
+net.zero_grad()
+
+z = net.forward_hidden(x)               # 稀疏编码，任意样本数
+x_hat = net.forward_output(x)            # 重构（原始输出，不做 softmax）
+W_dec = net.get_weights(1)              # (d_in, n_features)，列即学到的方向
+```
+
+`forward_layer` / `forward_output` / `forward_hidden` 返回**原始**激活，
+`predict_proba` 则返回 softmax 概率（只适用于交叉熵）。
+
+相关接口：`add_topk_layer`、`set_sparse_penalty`、`layer_count`、`layer_dims`、
+`forward_layer`、`forward_output`、`forward_hidden`、`get_weights` / `set_weights`、
+`get_bias` / `set_bias`、`get_weight_grad`（读梯度做交叉校验）。
+
+C++ 侧的 `sparse_demo.cpp` 对 TOPK 反传和 L1 梯度注入都做了中心差分校验。
+
 ## 注意
 
 - 图是**静态**的，行数在 `ta.Net(batch=...)` 时固定；`train_batch` 的样本数必须等于 batch。
-- `predict_proba` 会自动按 batch 切块前向，所以喂任意样本数都行。
+- `predict_proba` / `forward_layer` 会自动按 batch 切块前向，所以喂任意样本数都行。
 - `predict_proba` 需要 `loss="cross_entropy"`（否则 softmax 不会被计算）。
-- 目前只暴露了全连接网络；注意力/算子级的图 API 还没做 Python 绑定。
+- 目前只暴露了全连接网络 + TopK / LN 等算子；任意构图级别的图 API 还没做 Python 绑定。

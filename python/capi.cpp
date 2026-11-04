@@ -42,6 +42,33 @@ namespace
 		}
 		return rows;
 	}
+
+	// 图是固定 batch 的静态图：不足 batch 行时用 0 补齐再前向
+	std::vector<std::vector<float>> padded_input(const float* data, int n, int cols, int batch)
+	{
+		std::vector<std::vector<float>> rows(batch, std::vector<float>(cols, 0.0f));
+		for (int i = 0; i < n; ++i)
+		{
+			std::memcpy(rows[i].data(), data + static_cast<size_t>(i) * cols, sizeof(float) * cols);
+		}
+		return rows;
+	}
+
+	Tensor* layer_tensor(Handle* h, int idx, int which, const char** err)
+	{
+		if (idx < 0 || idx >= h->net.layer_count())
+		{
+			*err = "layer index out of range";
+			return nullptr;
+		}
+		switch (which)
+		{
+		case 0: return h->net.layer_outputs(idx);
+		case 1: return h->net.layer_weights(idx);
+		case 2: return h->net.layer_bias(idx);
+		default: return h->net.layer_inputs(idx);
+		}
+	}
 }
 
 extern "C"
@@ -195,6 +222,155 @@ extern "C"
 		{
 			const std::vector<float>& p = handle->net.get_y_hat_softmax(i);
 			std::memcpy(out + static_cast<size_t>(i) * handle->out_dim, p.data(), sizeof(float) * handle->out_dim);
+		}
+		return 0;
+	}
+
+	// ---- 稀疏自编码器需要的额外接口 -------------------------------------
+
+	// 添加一层 TopK 激活：每行只保留前 k 个正值
+	TA_API int ta_add_topk_layer(void* h, int num_inputs, int num_outputs, int k)
+	{
+		auto* handle = static_cast<Handle*>(h);
+		if (handle == nullptr || handle->loss_set)
+		{
+			set_error("add_layer must be called before set_loss");
+			return -1;
+		}
+		if (k < 1 || k > num_outputs)
+		{
+			set_error("top_k must be in [1, num_outputs]");
+			return -1;
+		}
+		handle->net.add_layer(num_inputs, num_outputs, FCLayer::TOPK, k);
+		if (handle->in_dim == 0)
+		{
+			handle->in_dim = num_inputs;
+		}
+		handle->out_dim = num_outputs;
+		return 0;
+	}
+
+	// 给第 layer 层的输出加 L1 稀疏惩罚（layer=0 通常是编码器隐层）
+	TA_API int ta_set_sparse_penalty(void* h, float coeff, int layer)
+	{
+		auto* handle = static_cast<Handle*>(h);
+		if (handle == nullptr || layer < 0 || layer >= handle->net.layer_count())
+		{
+			set_error("layer index out of range");
+			return -1;
+		}
+		handle->net.set_sparse_penalty(coeff, layer);
+		return 0;
+	}
+
+	TA_API int ta_layer_count(void* h)
+	{
+		return static_cast<Handle*>(h)->net.layer_count();
+	}
+
+	// which: 0=outputs 1=weights 2=bias 3=inputs；写回 (rows, cols)
+	TA_API int ta_layer_dims(void* h, int layer, int which, int* rows, int* cols)
+	{
+		const char* err = nullptr;
+		Tensor* t = layer_tensor(static_cast<Handle*>(h), layer, which, &err);
+		if (t == nullptr)
+		{
+			set_error(err);
+			return -1;
+		}
+		*rows = t->get_row_dimension();
+		*cols = t->get_col_dimension();
+		return 0;
+	}
+
+	// 前向并返回指定层的输出（原始值，不做 softmax），n 可以小于 batch
+	TA_API int ta_forward_layer(void* h, const float* x, int n, int layer, float* out)
+	{
+		auto* handle = static_cast<Handle*>(h);
+		if (n < 1 || n > handle->batch)
+		{
+			set_error("n must be in [1, batch]");
+			return -1;
+		}
+		if (!handle->loss_set)
+		{
+			set_error("call set_loss before forward_layer");
+			return -1;
+		}
+		const char* err = nullptr;
+		Tensor* t = layer_tensor(handle, layer, 0, &err);
+		if (t == nullptr)
+		{
+			set_error(err);
+			return -1;
+		}
+		const auto xs = padded_input(x, n, handle->in_dim, handle->batch);
+		const auto ys = std::vector<std::vector<float>>(
+			handle->batch, std::vector<float>(handle->out_dim, 0.0f));
+		handle->net.forward_batch(xs, ys);
+		const int cols = t->get_col_dimension();
+		for (int i = 0; i < n; ++i)
+		{
+			std::memcpy(out + static_cast<size_t>(i) * cols,
+				t->get_data()[i].data(), sizeof(float) * cols);
+		}
+		return 0;
+	}
+
+	// 读/写某一层的权重或偏置（按行主序平铺）
+	TA_API int ta_get_layer_array(void* h, int layer, int which, float* out)
+	{
+		const char* err = nullptr;
+		Tensor* t = layer_tensor(static_cast<Handle*>(h), layer, which, &err);
+		if (t == nullptr)
+		{
+			set_error(err);
+			return -1;
+		}
+		const int cols = t->get_col_dimension();
+		for (int i = 0; i < t->get_row_dimension(); ++i)
+		{
+			std::memcpy(out + static_cast<size_t>(i) * cols,
+				t->get_data()[i].data(), sizeof(float) * cols);
+		}
+		return 0;
+	}
+
+	TA_API int ta_set_layer_array(void* h, int layer, int which, const float* data)
+	{
+		const char* err = nullptr;
+		Tensor* t = layer_tensor(static_cast<Handle*>(h), layer, which, &err);
+		if (t == nullptr)
+		{
+			set_error(err);
+			return -1;
+		}
+		const int cols = t->get_col_dimension();
+		for (int i = 0; i < t->get_row_dimension(); ++i)
+		{
+			std::memcpy(t->get_data()[i].data(),
+				data + static_cast<size_t>(i) * cols, sizeof(float) * cols);
+		}
+		return 0;
+	}
+
+	// 读某一层权重的梯度（用于和 NumPy 参考实现做交叉校验）
+	TA_API int ta_get_weight_grad(void* h, int layer, float* out)
+	{
+		const char* err = nullptr;
+		Tensor* t = layer_tensor(static_cast<Handle*>(h), layer, 1, &err);
+		if (t == nullptr)
+		{
+			set_error(err);
+			return -1;
+		}
+		const auto& g = t->get_grad();
+		const int cols = t->get_col_dimension();
+		for (int i = 0; i < t->get_row_dimension(); ++i)
+		{
+			std::memcpy(out + static_cast<size_t>(i) * cols,
+				g[i].data(), sizeof(float) * cols);
 		}
 		return 0;
 	}

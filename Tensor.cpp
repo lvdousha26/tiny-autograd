@@ -302,6 +302,19 @@ void Tensor::backward_calculate_left_grad()
 			}
 		}
 		break;
+	case CalculateFun::TOPK:
+		// 只让被保留下来的那 k 个位置把梯度传回去
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			std::vector<float>& gl = left->grad[row_of(left->row_dimension, r)];
+			const std::vector<float>& gd = this->grad[r];
+			const std::vector<float>& d = data[r];
+			for (int j = 0; j < col_dimension; ++j)
+			{
+				gl[j] += gd[j] * (d[j] > 0.0f ? 1.0f : 0.0f);
+			}
+		}
+		break;
 	case CalculateFun::VECTOR_CROSSENTROPY:
 	{
 		const int rows = left->row_dimension;
@@ -422,6 +435,7 @@ void Tensor::backward_calculate_right_grad()
 	case CalculateFun::TRANSPOSE:
 	case CalculateFun::SOFTMAX:
 	case CalculateFun::LAYER_NORM:
+	case CalculateFun::TOPK:
 		break;
 	case CalculateFun::VECTOR_SIGMOID:
 	case CalculateFun::VECTOR_TANH:
@@ -690,6 +704,34 @@ void Tensor::forward_calculate_data()
 			for (int j = 0; j < col_dimension; ++j)
 			{
 				d[j] = (x[j] - mean) * inv;
+			}
+		}
+		break;
+	case CalculateFun::TOPK:
+		// 逐行 ReLU，然后只保留最大的 k 个（k 借用 alpha 字段）
+		{
+			const int k = std::max(1, std::min(static_cast<int>(alpha), col_dimension));
+			std::vector<int> order(col_dimension);
+			std::vector<float> pos(col_dimension);
+			for (int r = 0; r < row_dimension; ++r)
+			{
+				const std::vector<float>& x = left->data[row_of(left->row_dimension, r)];
+				std::vector<float>& d = data[r];
+				std::fill(d.begin(), d.end(), 0.0f);
+				for (int j = 0; j < col_dimension; ++j)
+				{
+					pos[j] = std::max(0.0f, x[j]);
+				}
+				std::iota(order.begin(), order.end(), 0);
+				std::partial_sort(order.begin(), order.begin() + k, order.end(),
+					[&](int a, int b) { return pos[a] > pos[b]; });
+				for (int q = 0; q < k; ++q)
+				{
+					if (pos[order[q]] > 0.0f)
+					{
+						d[order[q]] = pos[order[q]];
+					}
+				}
 			}
 		}
 		break;

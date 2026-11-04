@@ -39,7 +39,8 @@ class Tensor
 		VECTOR_ELU,         // ELU，负半轴斜率为 alpha
 		VECTOR_GELU,        // GELU（精确 erf 形式）
 		VECTOR_SILU,        // SiLU / Swish
-		LAYER_NORM          // 逐行层归一化（不含仿射，gamma/beta 由 MUL/ADD 节点承担）
+		LAYER_NORM,         // 逐行层归一化（不含仿射）
+		TOPK                // 逐行 ReLU 后只保留最大的 k 个，k 存在 alpha 里
 	};
 
 	// 构造函数
@@ -59,6 +60,7 @@ class Tensor
 
 	// 获取和设置数据、梯度
 	[[nodiscard]] const std::vector<std::vector<float>>& get_grad() const;
+	[[nodiscard]] std::vector<std::vector<float>>& get_grad();
 	[[nodiscard]] std::vector<std::vector<float>>& get_data();
 	[[nodiscard]] const std::vector<std::vector<float>>& get_data() const;
 	[[nodiscard]] const std::vector<float>& get_softmax_data() const;
@@ -102,6 +104,11 @@ class Tensor
 };
 
 inline const std::vector<std::vector<float>>& Tensor::get_grad() const
+{
+	return grad;
+}
+
+inline std::vector<std::vector<float>>& Tensor::get_grad()
 {
 	return grad;
 }

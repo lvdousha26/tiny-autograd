@@ -11,11 +11,12 @@ class FCLayer
 {
  public:
 	// NONE 为恒等；LEAKY_RELU 斜率 0.01，ELU 斜率 1.0
-	enum ActivationFun{NONE, RELU, SIGMOID, TANH, LEAKY_RELU, ELU, GELU, SILU}; // 激活函数
+	enum ActivationFun{NONE, RELU, SIGMOID, TANH, LEAKY_RELU, ELU, GELU, SILU, TOPK}; // 激活函数
 
 	// 构造函数：创建层并构建计算图
 	// batch 为该层一次处理的样本数（行数），默认 1 表示逐样本
-	FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn, int batch = 1);
+	// TOPK 层用 top_k 指定每行保留几个非零激活（写进 outputs 的 alpha 字段）
+	FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn, int batch = 1, int top_k = 0);
 
 	FCLayer(const FCLayer&) = delete;
 	FCLayer& operator=(const FCLayer&) = delete;

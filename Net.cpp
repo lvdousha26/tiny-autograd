@@ -94,6 +94,28 @@ float Net::train_batch(const std::vector<std::vector<float>>& input_value, const
 {
 	const float loss_value = forward_batch(input_value, label_value);
 	zero_grad_without_parameters();
+	float sparse_term = 0.0f;
+	if (sparse_coeff > 0.0f && sparse_layer >= 0 && sparse_layer < static_cast<int>(layers.size()))
+	{
+		// 直接把 lambda * mean(sum z) 的梯度注入隐层输出：
+		// 反向传播用的是 +=，所以这里预置的梯度不会被后续 consumer 覆盖。
+		Tensor* z = layers[sparse_layer]->GetOutputs();
+		std::vector<std::vector<float>>& gz = z->get_grad();
+		const std::vector<std::vector<float>>& zd = z->get_data();
+		const float scale = sparse_coeff / static_cast<float>(batch_rows);
+		for (int r = 0; r < z->get_row_dimension(); ++r)
+		{
+			for (int j = 0; j < z->get_col_dimension(); ++j)
+			{
+				if (zd[r][j] > 0.0f)
+				{
+					gz[r][j] += scale;
+					sparse_term += zd[r][j];
+				}
+			}
+		}
+		sparse_term *= scale;
+	}
 	if (backward_mode == MEMO_SEARCH)
 	{
 		backward_memo();
@@ -102,7 +124,7 @@ float Net::train_batch(const std::vector<std::vector<float>>& input_value, const
 	{
 		backward();
 	}
-	return loss_value;
+	return loss_value + sparse_term;
 }
 
 void Net::backward() const
@@ -143,17 +165,23 @@ void Net::zero_grad_without_parameters() const
 	}
 }
 
-void Net::add_layer(int num_of_inputs, int num_of_outputs, FCLayer::ActivationFun activation_fn)
+void Net::set_sparse_penalty(float coeff, int layer)
+{
+	sparse_coeff = coeff;
+	sparse_layer = layer;
+}
+
+void Net::add_layer(int num_of_inputs, int num_of_outputs, FCLayer::ActivationFun activation_fn, int top_k)
 {
 	if (layers.empty())
 	{
 		// 第一层
-		layers.emplace_back(new FCLayer(num_of_inputs, num_of_outputs, activation_fn, batch_rows));
+		layers.emplace_back(new FCLayer(num_of_inputs, num_of_outputs, activation_fn, batch_rows, top_k));
 	}
 	else
 	{
 		// 后续层：将前一层的输出作为当前层的输入
-		layers.emplace_back(new FCLayer(num_of_inputs, num_of_outputs, activation_fn, batch_rows));
+		layers.emplace_back(new FCLayer(num_of_inputs, num_of_outputs, activation_fn, batch_rows, top_k));
 
 		Tensor* cur_layer_inputs = (*layers.rbegin())->GetInputs();
 		Tensor* pre_layer_outputs = (*(layers.rbegin() + 1))->GetOutputs();

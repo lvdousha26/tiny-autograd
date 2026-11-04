@@ -5,7 +5,7 @@
 #include "utils.h"
 #include "Net.h"
 
-FCLayer::FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn, int batch) : activation_fn(fn)
+FCLayer::FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn, int batch, int top_k) : activation_fn(fn)
 {
 	// 创建各种Tensor
 	inputs = new Tensor(batch, num_of_inputs, true);
@@ -29,6 +29,10 @@ FCLayer::FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn, int ba
 
 	// 添加激活函数
 	outputs->set_left(w_x_b);
+	if (fn == TOPK)
+	{
+		outputs->set_alpha(static_cast<float>(top_k > 0 ? top_k : 1));
+	}
 	switch (activation_fn)
 	{
 	case RELU:
@@ -53,6 +57,9 @@ FCLayer::FCLayer(int num_of_inputs, int num_of_outputs, ActivationFun fn, int ba
 		break;
 	case SILU:
 		outputs->set_calculate_fn(Tensor::CalculateFun::VECTOR_SILU);
+		break;
+	case TOPK:
+		outputs->set_calculate_fn(Tensor::CalculateFun::TOPK);
 		break;
 	case NONE:
 	default:
