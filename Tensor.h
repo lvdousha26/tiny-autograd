@@ -38,7 +38,8 @@ class Tensor
 		VECTOR_LEAKY_RELU,  // leaky ReLU，负半轴斜率为 alpha
 		VECTOR_ELU,         // ELU，负半轴斜率为 alpha
 		VECTOR_GELU,        // GELU（精确 erf 形式）
-		VECTOR_SILU         // SiLU / Swish
+		VECTOR_SILU,        // SiLU / Swish
+		LAYER_NORM          // 逐行层归一化（不含仿射，gamma/beta 由 MUL/ADD 节点承担）
 	};
 
 	// 构造函数

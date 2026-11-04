@@ -16,6 +16,9 @@ static inline bool worth_parallel(long long work)
 {
 	return work >= 1LL << 14;
 }
+
+// LayerNorm 分母里的稳定项（前向和反向必须用同一个值）
+static constexpr float kLayerNormEps = 1e-5f;
 Tensor::Tensor(int row_dim, int col_dim, bool require_grad)
 	: row_dimension(row_dim), col_dimension(col_dim), require_grad(require_grad)
 {
@@ -262,6 +265,43 @@ void Tensor::backward_calculate_left_grad()
 			}
 		}
 		break;
+	case CalculateFun::LAYER_NORM:
+		// y = (x - mean) / sqrt(var + eps)
+		// dx_j = inv * ( g_j - mean(g) - xhat_j * mean(g . xhat) )
+		// xhat 就是本节点前向算出的 data，直接复用
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			const std::vector<float>& x = left->data[row_of(left->row_dimension, r)];
+			const std::vector<float>& xhat = data[r];
+			const std::vector<float>& gd = this->grad[r];
+			std::vector<float>& gl = left->grad[row_of(left->row_dimension, r)];
+			const float n = static_cast<float>(col_dimension);
+			float mean = 0.0f;
+			for (int j = 0; j < col_dimension; ++j) mean += x[j];
+			mean /= n;
+			float var = 0.0f;
+			for (int j = 0; j < col_dimension; ++j)
+			{
+				const float v = x[j] - mean;
+				var += v * v;
+			}
+			var /= n;
+			const float inv = 1.0f / std::sqrt(var + kLayerNormEps);
+			float sum_g = 0.0f;
+			float sum_gx = 0.0f;
+			for (int j = 0; j < col_dimension; ++j)
+			{
+				sum_g += gd[j];
+				sum_gx += gd[j] * xhat[j];
+			}
+			sum_g /= n;
+			sum_gx /= n;
+			for (int j = 0; j < col_dimension; ++j)
+			{
+				gl[j] += inv * (gd[j] - sum_g - xhat[j] * sum_gx);
+			}
+		}
+		break;
 	case CalculateFun::VECTOR_CROSSENTROPY:
 	{
 		const int rows = left->row_dimension;
@@ -381,6 +421,7 @@ void Tensor::backward_calculate_right_grad()
 		break;
 	case CalculateFun::TRANSPOSE:
 	case CalculateFun::SOFTMAX:
+	case CalculateFun::LAYER_NORM:
 		break;
 	case CalculateFun::VECTOR_SIGMOID:
 	case CalculateFun::VECTOR_TANH:
@@ -625,6 +666,30 @@ void Tensor::forward_calculate_data()
 			for (int i = 0; i < col_dimension; ++i)
 			{
 				d[i] = x[i] / (1.0f + std::exp(-x[i]));
+			}
+		}
+		break;
+	case CalculateFun::LAYER_NORM:
+		// 逐行归一化，不含可学习仿射：y = (x - mean) / sqrt(var + eps)
+		for (int r = 0; r < row_dimension; ++r)
+		{
+			const std::vector<float>& x = left->data[row_of(left->row_dimension, r)];
+			std::vector<float>& d = data[r];
+			const float n = static_cast<float>(col_dimension);
+			float mean = 0.0f;
+			for (int j = 0; j < col_dimension; ++j) mean += x[j];
+			mean /= n;
+			float var = 0.0f;
+			for (int j = 0; j < col_dimension; ++j)
+			{
+				const float v = x[j] - mean;
+				var += v * v;
+			}
+			var /= n;
+			const float inv = 1.0f / std::sqrt(var + kLayerNormEps);
+			for (int j = 0; j < col_dimension; ++j)
+			{
+				d[j] = (x[j] - mean) * inv;
 			}
 		}
 		break;
